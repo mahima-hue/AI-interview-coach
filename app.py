@@ -11,20 +11,26 @@ import av
 
 # ================= CONFIG =================
 API_URL = "https://router.huggingface.co/hf-inference/models/trpakov/vit-face-expression"
-HEADERS = {"Authorization": "Bearer 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"}
+HEADERS = {"Authorization": "Bearer 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"}  # <-- put your token here
+
+# ================= SESSION STORAGE =================
+if "history" not in st.session_state:
+    st.session_state.history = []
+    st.session_state.emotions = []
+    st.session_state.postures = []
 
 # ================= UI =================
 st.set_page_config(page_title="AI Interview Coach", layout="wide")
 
-st.markdown("""
-<style>
-body {background-color:#0e1117; color:white;}
-h1, h2, h3 {text-align:center;}
-</style>
-""", unsafe_allow_html=True)
-
 st.title("🎤 AI Interview Behavior Analyzer")
-st.markdown("<p style='text-align:center;'>Real-time AI Mock Interview System</p>", unsafe_allow_html=True)
+st.markdown("Real-time AI Mock Interview System")
+
+# RESET BUTTON
+if st.button("🔄 Reset Session"):
+    st.session_state.history = []
+    st.session_state.emotions = []
+    st.session_state.postures = []
+    st.success("Session Reset!")
 
 # ================= FUNCTIONS =================
 
@@ -64,32 +70,29 @@ def detect_posture(frame):
         return "Centered"
 
 
-# ================= SMART REPORT =================
+# ================= REPORT =================
 
-def generate_report(history, emotions, posture):
+def generate_report(hist, emo, post):
 
-    history = np.array(history)
-    avg = np.mean(history)
-    std = np.std(history)
+    hist = np.array(hist)
+    avg = np.mean(hist)
+    std = np.std(hist)
 
-    trend = "improving" if history[-1] > history[0] else "declining" if history[-1] < history[0] else "stable"
+    trend = "improving" if hist[-1] > hist[0] else "declining" if hist[-1] < hist[0] else "stable"
 
-    counts = Counter(emotions)
-    total = len(emotions)
-    dominant = max(counts, key=counts.get)
-
-    posture_main = max(set(posture), key=posture.count)
+    dominant = Counter(emo).most_common(1)[0][0]
+    posture_main = Counter(post).most_common(1)[0][0]
 
     return f"""
 ## 🧠 AI Interview Report
 
-### 📊 Confidence Analysis
-Average confidence: **{round(avg*10)}/10**  
+### 📊 Confidence
+Average: **{round(avg*10)}/10**  
 Trend: **{trend}**  
 Stability: **{'high' if std<0.1 else 'medium' if std<0.2 else 'low'}**
 
 ### 🎭 Emotion
-Dominant emotion: **{dominant}**
+Dominant: **{dominant}**
 
 ### 🧍 Posture
 Mostly: **{posture_main}**
@@ -99,8 +102,8 @@ Mostly: **{posture_main}**
 ### 🚀 Recommendations
 • Maintain consistent confidence  
 • Improve facial expressions  
-• Keep eye contact (centered posture)  
-• Practice mock interviews regularly  
+• Keep eye contact  
+• Practice regularly  
 
 ---
 
@@ -112,24 +115,19 @@ Mostly: **{posture_main}**
 # ================= VIDEO CLASS =================
 
 class Analyzer(VideoTransformerBase):
-    def __init__(self):
-        if "history" not in st.session_state:
-            st.session_state.history = []
-            st.session_state.emotions = []
-            st.session_state.posture = []
-
     def transform(self, frame):
         img = frame.to_ndarray(format="bgr24")
-
         small = cv2.resize(img,(224,224))
 
         emotion, conf = get_emotion(small)
         pose = detect_posture(img)
 
+        # STORE DATA (PERSISTENT)
         st.session_state.history.append(conf)
         st.session_state.emotions.append(emotion)
-        st.session_state.posture.append(pose)
+        st.session_state.postures.append(pose)
 
+        # DISPLAY TEXT
         cv2.putText(img, emotion,(20,40),0,1,(0,255,0),2)
         cv2.putText(img, str(round(conf*100,1)),(20,80),0,1,(0,255,0),2)
         cv2.putText(img, pose,(20,120),0,0.7,(255,255,0),2)
@@ -150,21 +148,21 @@ st.markdown("---")
 
 if st.button("📊 Generate Report"):
 
-    if "history" in st.session_state and len(st.session_state.history) > 15:
+    hist = st.session_state.history
+    emo = st.session_state.emotions
+    post = st.session_state.postures
+
+    if len(hist) > 5:
 
         st.success("Analysis Complete ✅")
 
         st.subheader("📈 Confidence Trend")
-        st.line_chart(pd.DataFrame({"Confidence": st.session_state.history}))
+        st.line_chart(pd.DataFrame({"Confidence": hist}))
 
         st.subheader("🎭 Emotion Distribution")
-        st.bar_chart(pd.Series(st.session_state.emotions).value_counts())
+        st.bar_chart(pd.Series(emo).value_counts())
 
-        st.markdown(generate_report(
-            st.session_state.history,
-            st.session_state.emotions,
-            st.session_state.posture
-        ))
+        st.markdown(generate_report(hist, emo, post))
 
     else:
-        st.warning("⚠️ Please run the interview for at least 5–10 seconds first!")
+        st.warning("⚠️ Run interview for at least 5–10 seconds first!")
