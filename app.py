@@ -64,16 +64,18 @@ def detect_posture(frame):
         return "Centered"
 
 
-# ================= AI ANALYSIS =================
+# ================= SMART REPORT =================
 
 def generate_report(history, emotions, posture):
 
+    history = np.array(history)
     avg = np.mean(history)
     std = np.std(history)
 
     trend = "improving" if history[-1] > history[0] else "declining" if history[-1] < history[0] else "stable"
 
     counts = Counter(emotions)
+    total = len(emotions)
     dominant = max(counts, key=counts.get)
 
     posture_main = max(set(posture), key=posture.count)
@@ -81,18 +83,26 @@ def generate_report(history, emotions, posture):
     return f"""
 ## 🧠 AI Interview Report
 
-Confidence trend: **{trend}**  
+### 📊 Confidence Analysis
 Average confidence: **{round(avg*10)}/10**  
+Trend: **{trend}**  
 Stability: **{'high' if std<0.1 else 'medium' if std<0.2 else 'low'}**
 
-Emotion: **{dominant}**  
-Posture: **{posture_main}**
+### 🎭 Emotion
+Dominant emotion: **{dominant}**
 
-### 🎯 Recommendations
-- Maintain eye contact  
-- Improve expressiveness  
-- Keep posture centered  
-- Practice consistency  
+### 🧍 Posture
+Mostly: **{posture_main}**
+
+---
+
+### 🚀 Recommendations
+• Maintain consistent confidence  
+• Improve facial expressions  
+• Keep eye contact (centered posture)  
+• Practice mock interviews regularly  
+
+---
 
 ### 🏁 Verdict
 {'Strong performance' if avg>0.7 else 'Needs improvement'}
@@ -103,9 +113,10 @@ Posture: **{posture_main}**
 
 class Analyzer(VideoTransformerBase):
     def __init__(self):
-        self.history = []
-        self.emotions = []
-        self.posture = []
+        if "history" not in st.session_state:
+            st.session_state.history = []
+            st.session_state.emotions = []
+            st.session_state.posture = []
 
     def transform(self, frame):
         img = frame.to_ndarray(format="bgr24")
@@ -115,9 +126,9 @@ class Analyzer(VideoTransformerBase):
         emotion, conf = get_emotion(small)
         pose = detect_posture(img)
 
-        self.history.append(conf)
-        self.emotions.append(emotion)
-        self.posture.append(pose)
+        st.session_state.history.append(conf)
+        st.session_state.emotions.append(emotion)
+        st.session_state.posture.append(pose)
 
         cv2.putText(img, emotion,(20,40),0,1,(0,255,0),2)
         cv2.putText(img, str(round(conf*100,1)),(20,80),0,1,(0,255,0),2)
@@ -126,29 +137,34 @@ class Analyzer(VideoTransformerBase):
         return img
 
 
-# ================= MAIN =================
+# ================= CAMERA =================
 
-ctx = webrtc_streamer(
+webrtc_streamer(
     key="interview",
     video_transformer_factory=Analyzer
 )
 
 # ================= REPORT BUTTON =================
 
+st.markdown("---")
+
 if st.button("📊 Generate Report"):
-    if ctx.video_transformer:
 
-        data = ctx.video_transformer
+    if "history" in st.session_state and len(st.session_state.history) > 15:
 
-        if len(data.history) > 10:
-            st.success("Analysis Complete ✅")
+        st.success("Analysis Complete ✅")
 
-            st.subheader("📈 Confidence Trend")
-            st.line_chart(pd.DataFrame({"Confidence": data.history}))
+        st.subheader("📈 Confidence Trend")
+        st.line_chart(pd.DataFrame({"Confidence": st.session_state.history}))
 
-            st.subheader("🎭 Emotion Distribution")
-            st.bar_chart(pd.Series(data.emotions).value_counts())
+        st.subheader("🎭 Emotion Distribution")
+        st.bar_chart(pd.Series(st.session_state.emotions).value_counts())
 
-            st.markdown(generate_report(data.history, data.emotions, data.posture))
-        else:
-            st.warning("Run interview for few seconds first!")
+        st.markdown(generate_report(
+            st.session_state.history,
+            st.session_state.emotions,
+            st.session_state.posture
+        ))
+
+    else:
+        st.warning("⚠️ Please run the interview for at least 5–10 seconds first!")
