@@ -2,35 +2,33 @@ import streamlit as st
 import cv2
 import requests
 import base64
+import time
 import numpy as np
 import pandas as pd
 from collections import Counter
 
-from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
-import av
-
 # ================= CONFIG =================
 API_URL = "https://router.huggingface.co/hf-inference/models/trpakov/vit-face-expression"
-HEADERS = {"Authorization": "Bearer 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"}  # <-- put your token here
-
-# ================= SESSION STORAGE =================
-if "history" not in st.session_state:
-    st.session_state.history = []
-    st.session_state.emotions = []
-    st.session_state.postures = []
+HEADERS = {"Authorization": "Bearer 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"}
 
 # ================= UI =================
 st.set_page_config(page_title="AI Interview Coach", layout="wide")
 
-st.title("🎤 AI Interview Behavior Analyzer")
-st.markdown("Real-time AI Mock Interview System")
+st.markdown("""
+<style>
+body {background-color:#0e1117; color:white;}
+h1, h2, h3 {text-align:center;}
+.block-container {padding-top:1rem;}
+</style>
+""", unsafe_allow_html=True)
 
-# RESET BUTTON
-if st.button("🔄 Reset Session"):
-    st.session_state.history = []
-    st.session_state.emotions = []
-    st.session_state.postures = []
-    st.success("Session Reset!")
+st.title("🎤 AI Interview Behavior Analyzer")
+st.markdown("<p style='text-align:center;'>Real-time Behavioral Intelligence System</p>", unsafe_allow_html=True)
+
+col_cam, col_panel = st.columns([2,1])
+tip_box = col_panel.empty()
+progress_chart = col_panel.empty()
+metric_box = col_panel.empty()
 
 # ================= FUNCTIONS =================
 
@@ -70,99 +68,207 @@ def detect_posture(frame):
         return "Centered"
 
 
-# ================= REPORT =================
+def get_live_tip(conf, emotion):
+    if conf < 0.5:
+        return "⚠️ Confidence dropping — slow down and speak clearly"
+    elif emotion in ["sad","fear"]:
+        return "⚠️ You seem tense — relax your face"
+    elif emotion == "neutral":
+        return "💡 Add more expressions"
+    elif emotion == "happy":
+        return "✅ Great energy — maintain it"
+    return "💡 Stay composed"
 
-def generate_report(hist, emo, post):
 
-    hist = np.array(hist)
-    avg = np.mean(hist)
-    std = np.std(hist)
+# ================= 🧠 SMART ANALYSIS =================
 
-    trend = "improving" if hist[-1] > hist[0] else "declining" if hist[-1] < hist[0] else "stable"
+def generate_report(history, emotions, posture_history):
 
-    dominant = Counter(emo).most_common(1)[0][0]
-    posture_main = Counter(post).most_common(1)[0][0]
+    history = np.array(history)
+    avg = np.mean(history)
+    std = np.std(history)
 
+    # trend
+    trend_value = history[-1] - history[0]
+    if trend_value > 0.1:
+        trend = "improving"
+    elif trend_value < -0.1:
+        trend = "declining"
+    else:
+        trend = "stable"
+
+    # emotion distribution
+    counts = Counter(emotions)
+    total = len(emotions)
+    emotion_percent = {k: round(v/total*100,1) for k,v in counts.items()}
+    dominant = max(emotion_percent, key=emotion_percent.get)
+
+    # posture consistency
+    posture_counts = Counter(posture_history)
+    posture_main = max(posture_counts, key=posture_counts.get)
+    posture_ratio = posture_counts[posture_main] / len(posture_history)
+
+    # dynamic confidence description
+    if avg > 0.75:
+        conf_desc = "consistently strong"
+    elif avg > 0.6:
+        conf_desc = "moderately strong but not fully stable"
+    else:
+        conf_desc = "inconsistent and needs improvement"
+
+    # stability
+    if std < 0.08:
+        stability = "highly stable"
+    elif std < 0.18:
+        stability = "moderately stable"
+    else:
+        stability = "unstable"
+
+    # emotion interpretation
+    if dominant == "happy":
+        emotion_desc = "engaging and positive"
+    elif dominant == "neutral":
+        emotion_desc = "controlled but less expressive"
+    else:
+        emotion_desc = "low energy or slightly stressed"
+
+    # posture interpretation
+    if posture_ratio > 0.75:
+        posture_desc = "well aligned and focused"
+    else:
+        posture_desc = "inconsistent and distracting"
+
+    # FINAL DYNAMIC REPORT
     return f"""
-## 🧠 AI Interview Report
+## 🧠 Personalized AI Interview Analysis
 
-### 📊 Confidence
-Average: **{round(avg*10)}/10**  
-Trend: **{trend}**  
-Stability: **{'high' if std<0.1 else 'medium' if std<0.2 else 'low'}**
-
-### 🎭 Emotion
-Dominant: **{dominant}**
-
-### 🧍 Posture
-Mostly: **{posture_main}**
+### 📊 Confidence Behavior
+Your confidence remained **{conf_desc}**, with a **{trend} trajectory** throughout the session.  
+The variation suggests your delivery was **{stability}**, indicating how well you handled pressure over time.
 
 ---
 
-### 🚀 Recommendations
-• Maintain consistent confidence  
-• Improve facial expressions  
-• Keep eye contact  
-• Practice regularly  
+### 🎭 Emotional Intelligence
+You showed a dominant expression of **{dominant} ({emotion_percent[dominant]}%)**, reflecting a **{emotion_desc} communication style**.
 
 ---
 
-### 🏁 Verdict
-{'Strong performance' if avg>0.7 else 'Needs improvement'}
+### 🧍 Posture & Presence
+Your posture was **{posture_desc}**, with **{round(posture_ratio*100)}% alignment consistency**, which directly impacts interviewer perception.
+
+---
+
+### ⚡ Behavioral Insight
+- You {'adapted well during the session' if trend=='improving' else 'lost confidence gradually' if trend=='declining' else 'maintained a steady pattern'}
+- Your engagement level was {'high' if dominant=='happy' else 'moderate' if dominant=='neutral' else 'low'}
+- Your body language was {'professional' if posture_ratio>0.7 else 'needs improvement'}
+
+---
+
+## 🚀 Smart Recommendations
+
+• Maintain consistent confidence from start to end  
+• Improve facial expressiveness to increase engagement  
+• Keep eye contact steady (stay centered)  
+• Practice controlled breathing to reduce fluctuations  
+• Simulate real interviews regularly to build stability  
+
+---
+
+## 🏁 Final Verdict
+
+You {'demonstrate strong interview readiness' if avg>0.7 else 'show potential but need refinement in delivery and consistency'}.
 """
 
 
-# ================= VIDEO CLASS =================
+# ================= MAIN =================
 
-class Analyzer(VideoTransformerBase):
-    def transform(self, frame):
-        img = frame.to_ndarray(format="bgr24")
-        small = cv2.resize(img,(224,224))
+duration = st.slider("⏱ Analysis Duration (seconds)", 5, 120, 30)
 
-        emotion, conf = get_emotion(small)
-        pose = detect_posture(img)
+if st.button("🚀 Start Analysis"):
 
-        # STORE DATA (PERSISTENT)
-        st.session_state.history.append(conf)
-        st.session_state.emotions.append(emotion)
-        st.session_state.postures.append(pose)
+    cap = cv2.VideoCapture(0)
 
-        # DISPLAY TEXT
-        cv2.putText(img, emotion,(20,40),0,1,(0,255,0),2)
-        cv2.putText(img, str(round(conf*100,1)),(20,80),0,1,(0,255,0),2)
-        cv2.putText(img, pose,(20,120),0,0.7,(255,255,0),2)
+    history = []
+    emotions = []
+    posture_history = []
 
-        return img
+    frame_box = col_cam.empty()
 
+    start = time.time()
+    last_api = 0
+    frame_count = 0
 
-# ================= CAMERA =================
+    current_emotion = "neutral"
+    current_conf = 0.5
 
-webrtc_streamer(
-    key="interview",
-    video_transformer_factory=Analyzer
-)
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-# ================= REPORT BUTTON =================
+        frame = cv2.flip(frame,1)
+        small = cv2.resize(frame,(224,224))
 
-st.markdown("---")
+        frame_count += 1
 
-if st.button("📊 Generate Report"):
+        if frame_count % 5 == 0 and time.time() - last_api > 2:
+            current_emotion, current_conf = get_emotion(small)
+            last_api = time.time()
 
-    hist = st.session_state.history
-    emo = st.session_state.emotions
-    post = st.session_state.postures
+        posture = detect_posture(frame)
 
-    if len(hist) > 5:
+        history.append(current_conf)
+        emotions.append(current_emotion)
+        posture_history.append(posture)
 
-        st.success("Analysis Complete ✅")
+        # LIVE UI
+        df_live = pd.DataFrame({"Confidence": history})
+        progress_chart.line_chart(df_live)
 
-        st.subheader("📈 Confidence Trend")
-        st.line_chart(pd.DataFrame({"Confidence": hist}))
+        metric_box.metric("Confidence", round(current_conf*100,1))
+        tip_box.markdown(f"### 💡 {get_live_tip(current_conf, current_emotion)}")
 
-        st.subheader("🎭 Emotion Distribution")
-        st.bar_chart(pd.Series(emo).value_counts())
+        # overlay
+        cv2.putText(frame, current_emotion,(20,40),0,1,(0,255,0),2)
+        cv2.putText(frame, str(round(current_conf*100,1)), (20,80),0,1,(0,255,0),2)
+        cv2.putText(frame, posture,(20,120),0,0.7,(255,255,0),2)
 
-        st.markdown(generate_report(hist, emo, post))
+        frame_box.image(frame, channels="BGR")
 
-    else:
-        st.warning("⚠️ Run interview for at least 5–10 seconds first!")
+        time.sleep(0.03)
+
+        if time.time() - start > duration:
+            break
+
+    cap.release()
+
+    st.success("✅ Analysis Completed")
+
+    # DASHBOARD
+    st.subheader("🏆 Performance Breakdown")
+
+    conf = round(np.mean(history)*10)
+    stab = round((1-np.std(history))*10)
+    expr = round((emotions.count("happy")/len(emotions))*10)
+    post = round((posture_history.count("Centered")/len(posture_history))*10)
+
+    col1,col2,col3,col4 = st.columns(4)
+    col1.metric("Confidence", conf)
+    col2.metric("Stability", stab)
+    col3.metric("Expression", expr)
+    col4.metric("Posture", post)
+
+    st.subheader("📊 Detailed Scores")
+    st.progress(conf/10)
+    st.progress(stab/10)
+    st.progress(expr/10)
+    st.progress(post/10)
+
+    st.subheader("🎭 Emotion Distribution")
+    st.bar_chart(pd.Series(emotions).value_counts())
+
+    st.subheader("📈 Confidence Trend")
+    st.line_chart(pd.DataFrame({"Confidence": history}))
+
+    st.markdown(generate_report(history, emotions, posture_history))
